@@ -1,0 +1,17 @@
+{
+	"name": "Dockerfile",
+	"build": {
+		"context": "..",
+		"target": "devcontainer",
+		"dockerfile": "../Dockerfile"
+	},
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "golang.go",
+                "github.copilot",
+                "github.vscode-github-actions"
+            ]
+        }
+    }
+}
