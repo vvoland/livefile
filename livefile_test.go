@@ -1,4 +1,4 @@
-package statefile
+package livefile
 
 import (
 	"context"
@@ -25,9 +25,9 @@ type TestData struct {
 func TestSimple(t *testing.T) {
 	path := testFilePath(t)
 	ctx := context.Background()
-	f := New(path, func() TestData {
+	f := New(path, WithDefault(func() TestData {
 		return TestData{Value: 42, Name: "test"}
-	})
+	}))
 
 	t.Run("View", func(t *testing.T) {
 		f.View(ctx, func(state *TestData) {
@@ -59,9 +59,9 @@ func TestSimple(t *testing.T) {
 func TestFileIsntCreatedBeforeFirstUpdate(t *testing.T) {
 	path := testFilePath(t)
 	ctx := context.Background()
-	f := New(path, func() TestData {
+	f := New(path, WithDefault(func() TestData {
 		return TestData{Value: 42, Name: "test"}
-	})
+	}))
 
 	_, err := os.Stat(path)
 	assert.Check(t, errors.Is(err, os.ErrNotExist))
@@ -86,9 +86,9 @@ func TestFileIsntCreatedBeforeFirstUpdate(t *testing.T) {
 func TestUpdateErrorWillRollbackChanges(t *testing.T) {
 	path := testFilePath(t)
 	ctx := context.Background()
-	f := New(path, func() TestData {
+	f := New(path, WithDefault(func() TestData {
 		return TestData{Value: 42, Name: "test"}
-	})
+	}))
 
 	err := f.Update(ctx, func(data *TestData) error {
 		data.Name = "updated"
@@ -126,9 +126,9 @@ func TestFileExists(t *testing.T) {
 	ctx := context.Background()
 
 	assert.NilError(t, os.WriteFile(path, []byte(`{"Value": 1337, "Name": "foobar"}`), 0o600))
-	f := New(path, func() TestData {
+	f := New(path, WithDefault(func() TestData {
 		return TestData{Value: 42, Name: "test"}
-	})
+	}))
 
 	data := f.Peek(ctx)
 	assert.Check(t, cmp.Equal(data.Value, 1337))
@@ -139,9 +139,9 @@ func TestFileExternalChange(t *testing.T) {
 	path := testFilePath(t)
 	ctx := context.Background()
 
-	f := New(path, func() TestData {
+	f := New(path, WithDefault(func() TestData {
 		return TestData{Value: 42, Name: "test"}
-	})
+	}))
 
 	data := f.Peek(ctx)
 	assert.Check(t, cmp.Equal(data.Value, 42))
@@ -158,9 +158,9 @@ func TestFileExternalChangeDuringView(t *testing.T) {
 	path := testFilePath(t)
 	ctx := context.Background()
 
-	f := New(path, func() TestData {
+	f := New(path, WithDefault(func() TestData {
 		return TestData{Value: 42, Name: "test"}
-	})
+	}))
 
 	doWrite := make(chan struct{})
 	doRead := make(chan struct{})
@@ -182,9 +182,9 @@ func TestFileExternalChangeDuringUpdate(t *testing.T) {
 	path := testFilePath(t)
 	ctx := context.Background()
 
-	f := New(path, func() TestData {
+	f := New(path, WithDefault(func() TestData {
 		return TestData{Value: 42, Name: "test"}
-	})
+	}))
 
 	doWrite := make(chan struct{})
 	doRead := make(chan struct{})
