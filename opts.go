@@ -17,6 +17,6 @@ func WithDefault[T any](f func() T) Opt[T] {
 // If not set, the default error handler will panic.
 func WithErrorHandler[T any](f func(context.Context, error)) Opt[T] {
 	return func(s *LiveFile[T]) {
-		s.error = f
+		s.errHandler = f
 	}
 }

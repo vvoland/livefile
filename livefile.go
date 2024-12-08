@@ -21,7 +21,7 @@ type LiveFile[StateT any] struct {
 	mutex       sync.Mutex
 
 	defaultFunc func() StateT
-	error       func(context.Context, error)
+	errHandler  func(context.Context, error)
 }
 
 // The default error handler used for all LiveFile instances created without an
@@ -39,8 +39,8 @@ func New[T any](path string, opts ...Opt[T]) *LiveFile[T] {
 		path = filepath.Join(BaseDir, path)
 	}
 	lf := &LiveFile[T]{
-		path:  path,
-		error: DefaultErrorHandler,
+		path:       path,
+		errHandler: DefaultErrorHandler,
 	}
 
 	for _, opt := range opts {
@@ -68,7 +68,7 @@ func (lf *LiveFile[T]) ensure(ctx context.Context) {
 	file, err := os.Open(lf.path)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
-			lf.error(ctx, err)
+			lf.errHandler(ctx, err)
 		}
 	} else {
 		lf.loadIfUpdated(ctx, file)
@@ -87,7 +87,7 @@ func (lf *LiveFile[T]) View(ctx context.Context, f func(state *T)) {
 func (lf *LiveFile[T]) loadIfUpdated(ctx context.Context, file *os.File) {
 	stat, err := file.Stat()
 	if err != nil {
-		lf.error(ctx, fmt.Errorf("stat failed: %w", err))
+		lf.errHandler(ctx, fmt.Errorf("stat failed: %w", err))
 	}
 
 	if stat.Size() == 0 {
@@ -104,7 +104,7 @@ func (lf *LiveFile[T]) loadIfUpdated(ctx context.Context, file *os.File) {
 func (lf *LiveFile[T]) forceLoad(ctx context.Context, file *os.File) {
 	_, err := file.Seek(0, io.SeekStart)
 	if err != nil {
-		lf.error(ctx, fmt.Errorf("failed to rewind file: %w", err))
+		lf.errHandler(ctx, fmt.Errorf("failed to rewind file: %w", err))
 	}
 
 	decoder := json.NewDecoder(file)
@@ -116,7 +116,7 @@ func (lf *LiveFile[T]) forceLoad(ctx context.Context, file *os.File) {
 		err = nil
 	}
 	if err != nil {
-		lf.error(ctx, fmt.Errorf("invalid JSON: %w", err))
+		lf.errHandler(ctx, fmt.Errorf("invalid JSON: %w", err))
 	}
 }
 
