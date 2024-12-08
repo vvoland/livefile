@@ -20,3 +20,14 @@ func WithErrorHandler[T any](f func(context.Context, error)) Opt[T] {
 		s.errHandler = f
 	}
 }
+
+// WithLoadedCallback sets the function that will be called when the file is
+// reloaded from the filesystem.
+// The function will be called with the context and a pointer to the new data.
+// Any access to the data MUST happen inside the callback and MUST NOT be
+// stored outside of it.
+func WithLoadedCallback[T any](f func(context.Context, *T)) Opt[T] {
+	return func(s *LiveFile[T]) {
+		s.onLoaded = f
+	}
+}

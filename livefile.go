@@ -22,6 +22,7 @@ type LiveFile[StateT any] struct {
 
 	defaultFunc func() StateT
 	errHandler  func(context.Context, error)
+	onLoaded    func(context.Context, *StateT)
 }
 
 // The default error handler used for all LiveFile instances created without an
@@ -117,6 +118,10 @@ func (lf *LiveFile[T]) forceLoad(ctx context.Context, file *os.File) {
 	}
 	if err != nil {
 		lf.errHandler(ctx, fmt.Errorf("invalid JSON: %w", err))
+	} else {
+		if lf.onLoaded != nil {
+			lf.onLoaded(ctx, &lf.cached)
+		}
 	}
 }
 
