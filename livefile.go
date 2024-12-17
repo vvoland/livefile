@@ -25,8 +25,8 @@ type LiveFile[StateT any] struct {
 	onLoaded    func(context.Context, *StateT)
 }
 
-// The default error handler used for all LiveFile instances created without an
-// explicit [WithDefault] option.
+// DefaultErrorHandler is the default error handler used for all [LiveFile]
+// instances created without an explicit [WithDefault].
 var DefaultErrorHandler = func(_ context.Context, err error) {
 	panic(err)
 }
@@ -35,6 +35,9 @@ var DefaultErrorHandler = func(_ context.Context, err error) {
 // function.
 var BaseDir string
 
+// New creates a new [LiveFile] instance with the given path and options.
+// The path can be either absolute or relative. If it is relative,
+// it will be joined with the [BaseDir].
 func New[T any](path string, opts ...Opt[T]) *LiveFile[T] {
 	if !filepath.IsAbs(path) && BaseDir != "" {
 		path = filepath.Join(BaseDir, path)
@@ -57,26 +60,10 @@ func New[T any](path string, opts ...Opt[T]) *LiveFile[T] {
 	return lf
 }
 
-func (lf *LiveFile[T]) Peek(ctx context.Context) T {
-	lf.mutex.Lock()
-	lf.ensure(ctx)
-	c := lf.cached
-	lf.mutex.Unlock()
-	return c
-}
-
-func (lf *LiveFile[T]) ensure(ctx context.Context) {
-	file, err := os.Open(lf.path)
-	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			lf.errHandler(ctx, err)
-		}
-	} else {
-		lf.loadIfUpdated(ctx, file)
-		file.Close()
-	}
-}
-
+// View retrieves the current state of the file and passes it to the given
+// function. The state pointer is only valid within the function call and
+// must not be stored.
+// The function must not modify the state or call other [LiveFile] methods.
 func (lf *LiveFile[T]) View(ctx context.Context, f func(state *T)) {
 	lf.mutex.Lock()
 	defer lf.mutex.Unlock()
@@ -85,46 +72,10 @@ func (lf *LiveFile[T]) View(ctx context.Context, f func(state *T)) {
 	f(&lf.cached)
 }
 
-func (lf *LiveFile[T]) loadIfUpdated(ctx context.Context, file *os.File) {
-	stat, err := file.Stat()
-	if err != nil {
-		lf.errHandler(ctx, fmt.Errorf("stat failed: %w", err))
-	}
-
-	if stat.Size() == 0 {
-		return
-	}
-
-	modTime := stat.ModTime()
-	if modTime.After(lf.lastModTime) {
-		lf.forceLoad(ctx, file)
-		lf.lastModTime = modTime
-	}
-}
-
-func (lf *LiveFile[T]) forceLoad(ctx context.Context, file *os.File) {
-	_, err := file.Seek(0, io.SeekStart)
-	if err != nil {
-		lf.errHandler(ctx, fmt.Errorf("failed to rewind file: %w", err))
-	}
-
-	decoder := json.NewDecoder(file)
-	err = decoder.Decode(&lf.cached)
-
-	// File empty
-	if err == io.EOF && decoder.InputOffset() == 0 {
-		lf.cached = lf.defaultFunc()
-		err = nil
-	}
-	if err != nil {
-		lf.errHandler(ctx, fmt.Errorf("invalid JSON: %w", err))
-	} else {
-		if lf.onLoaded != nil {
-			lf.onLoaded(ctx, &lf.cached)
-		}
-	}
-}
-
+// Update calls the given function with a mutable reference to the current file
+// state. If the function returns an error, the state is rolled back to the
+// previous value.
+// The function MUST NOT call other [LiveFile] methods.
 func (lf *LiveFile[T]) Update(ctx context.Context, f func(state *T) error) error {
 	lf.mutex.Lock()
 	defer lf.mutex.Unlock()
@@ -175,4 +126,65 @@ func (lf *LiveFile[T]) Update(ctx context.Context, f func(state *T) error) error
 		lf.lastModTime = stat.ModTime()
 	}
 	return err
+}
+
+// Peek retrieves the current state of the file and returns its copy.
+func (lf *LiveFile[T]) Peek(ctx context.Context) T {
+	lf.mutex.Lock()
+	lf.ensure(ctx)
+	c := lf.cached
+	lf.mutex.Unlock()
+	return c
+}
+
+func (lf *LiveFile[T]) ensure(ctx context.Context) {
+	file, err := os.Open(lf.path)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			lf.errHandler(ctx, err)
+		}
+	} else {
+		lf.loadIfUpdated(ctx, file)
+		file.Close()
+	}
+}
+
+func (lf *LiveFile[T]) loadIfUpdated(ctx context.Context, file *os.File) {
+	stat, err := file.Stat()
+	if err != nil {
+		lf.errHandler(ctx, fmt.Errorf("stat failed: %w", err))
+	}
+
+	if stat.Size() == 0 {
+		return
+	}
+
+	modTime := stat.ModTime()
+	if modTime.After(lf.lastModTime) {
+		lf.forceLoad(ctx, file)
+		lf.lastModTime = modTime
+	}
+}
+
+func (lf *LiveFile[T]) forceLoad(ctx context.Context, file *os.File) {
+	_, err := file.Seek(0, io.SeekStart)
+	if err != nil {
+		lf.errHandler(ctx, fmt.Errorf("failed to rewind file: %w", err))
+	}
+
+	decoder := json.NewDecoder(file)
+	err = decoder.Decode(&lf.cached)
+
+	// File empty
+	if err == io.EOF && decoder.InputOffset() == 0 {
+		lf.cached = lf.defaultFunc()
+		err = nil
+	}
+	if err != nil {
+		lf.errHandler(ctx, fmt.Errorf("invalid JSON: %w", err))
+	} else {
+		if lf.onLoaded != nil {
+			lf.onLoaded(ctx, &lf.cached)
+		}
+	}
 }
