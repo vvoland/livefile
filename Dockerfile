@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.23-bullseye AS base
+FROM --platform=$BUILDPLATFORM golang:1.23-bookworm AS base
 
 # devcontainer
 FROM base AS gopls
