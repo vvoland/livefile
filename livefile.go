@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 
 type LiveFile[StateT any] struct {
 	path string
+	fs   WriteFS
 
 	lastModTime time.Time
 	cached      StateT
@@ -31,6 +33,10 @@ var DefaultErrorHandler = func(_ context.Context, err error) {
 	panic(err)
 }
 
+// DefaultFileSystem is the default filesystem used for file operations in
+// all [LiveFile] instances created without an explicit [WithFileSystem] option.
+var DefaultFileSystem WriteFS = osFileSystem{}
+
 // BaseDir is the base directory for the relative paths passed to the [New]
 // function.
 var BaseDir string
@@ -44,6 +50,7 @@ func New[T any](path string, opts ...Opt[T]) *LiveFile[T] {
 	}
 	lf := &LiveFile[T]{
 		path:       path,
+		fs:         DefaultFileSystem,
 		errHandler: DefaultErrorHandler,
 	}
 
@@ -82,13 +89,13 @@ func (lf *LiveFile[T]) Update(ctx context.Context, f func(state *T) error) error
 
 	lf.ensure(ctx)
 
-	file, err := os.OpenFile(lf.path, os.O_RDWR|os.O_CREATE, 0o660)
-	if errors.Is(err, os.ErrNotExist) {
-		err = os.MkdirAll(path.Dir(lf.path), 0o770)
+	file, err := lf.fs.OpenFile(lf.path, os.O_RDWR|os.O_CREATE, 0o660)
+	if errors.Is(err, fs.ErrNotExist) {
+		err = lf.fs.MkdirAll(path.Dir(lf.path), 0o770)
 		if err != nil {
 			return err
 		}
-		file, err = os.OpenFile(lf.path, os.O_RDWR|os.O_CREATE, 0o660)
+		file, err = lf.fs.OpenFile(lf.path, os.O_RDWR|os.O_CREATE, 0o660)
 	}
 	if err != nil {
 		return err
@@ -138,9 +145,9 @@ func (lf *LiveFile[T]) Peek(ctx context.Context) T {
 }
 
 func (lf *LiveFile[T]) ensure(ctx context.Context) {
-	file, err := os.Open(lf.path)
+	file, err := lf.fs.Open(lf.path)
 	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
+		if !errors.Is(err, fs.ErrNotExist) {
 			lf.errHandler(ctx, err)
 		}
 	} else {
@@ -149,7 +156,7 @@ func (lf *LiveFile[T]) ensure(ctx context.Context) {
 	}
 }
 
-func (lf *LiveFile[T]) loadIfUpdated(ctx context.Context, file *os.File) {
+func (lf *LiveFile[T]) loadIfUpdated(ctx context.Context, file ReadSeekFile) {
 	stat, err := file.Stat()
 	if err != nil {
 		lf.errHandler(ctx, fmt.Errorf("stat failed: %w", err))
@@ -166,7 +173,7 @@ func (lf *LiveFile[T]) loadIfUpdated(ctx context.Context, file *os.File) {
 	}
 }
 
-func (lf *LiveFile[T]) forceLoad(ctx context.Context, file *os.File) {
+func (lf *LiveFile[T]) forceLoad(ctx context.Context, file ReadSeekFile) {
 	_, err := file.Seek(0, io.SeekStart)
 	if err != nil {
 		lf.errHandler(ctx, fmt.Errorf("failed to rewind file: %w", err))

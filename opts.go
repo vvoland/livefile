@@ -31,3 +31,11 @@ func WithLoadedCallback[T any](f func(context.Context, *T)) Opt[T] {
 		s.onLoaded = f
 	}
 }
+
+// WithFileSystem sets the filesystem to use for file operations.
+// If not set, the default osFileSystem will be used.
+func WithFileSystem[T any](fsys WriteFS) Opt[T] {
+	return func(s *LiveFile[T]) {
+		s.fs = fsys
+	}
+}
